@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bitcoin Trading Terminal - AI Institutional Decision System (1M Enabled)</title>
+    <title>Bitcoin Trading Terminal - AI Institutional Decision System (Markers Enabled)</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -117,7 +117,7 @@
 
     <script>
     // ============================================================================
-    // MOTOR DE INTELIGENCIA ARTIFICIAL PONDERADO (OPTIMIZADO PARA 1M/SCALPING)
+    // MOTOR DE INTELIGENCIA ARTIFICIAL PONDERADO
     // ============================================================================
     class UnifiedTradingAI {
         constructor() {
@@ -176,7 +176,6 @@
             const smc = this.evaluateSMC(candles);
             const vsa = this.evaluateVSA(candles);
             
-            // Evaluador directo de alineación
             const mtfScore = (vsa.score > 0 && smc.score >= 0) ? 80 : (vsa.score < 0 && smc.score <= 0) ? -80 : 0;
 
             const compositeScore = (smc.score * this.weights.smc) + (vsa.score * this.weights.vsa) + (mtfScore * this.weights.mtf);
@@ -187,8 +186,6 @@
             else if (compositeScore <= -this.threshold) action = "SELL";
 
             const currentPrice = candles[candles.length - 1].close;
-            
-            // Ajuste dinámico de Stop Loss según la temporalidad (Scalping en 1m)
             const multiplier = currentTF === "1m" ? 0.002 : 0.005;
             const buffer = currentPrice * multiplier;
 
@@ -210,6 +207,7 @@
     document.addEventListener("DOMContentLoaded", function () {
         const aiEngine = new UnifiedTradingAI();
         let currentCandleData = [];
+        let chartMarkers = []; // Arreglo para almacenar las flechas BUY / SELL en el gráfico
         let ws = null;
         let isMacroNewsActive = false;
 
@@ -243,6 +241,8 @@
             statusEl.style.color = "#ffb300";
 
             if (ws) ws.close();
+            chartMarkers = []; // Limpiar marcadores al cambiar TF
+            series.setMarkers([]);
 
             try {
                 const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=500`);
@@ -306,14 +306,42 @@
 
             card.className = "";
 
+            const lastCandle = currentCandleData[currentCandleData.length - 1];
+
             if (decision.action === "BUY") {
                 card.classList.add("state-buy");
                 actionEl.innerText = `🚀 COMPRA CONFIRMADA (${decision.confidence}%)`;
                 reasonEl.innerText = `Barrido de Liquidez SMC + Absorción Compradora VSA.`;
+
+                // Añadir flecha de COMPRA en la vela actual si no existe ya una señal en este timestamp
+                if (!chartMarkers.some(m => m.time === lastCandle.time)) {
+                    chartMarkers.push({
+                        time: lastCandle.time,
+                        position: 'belowBar',
+                        color: '#00e676',
+                        shape: 'arrowUp',
+                        text: `BUY (${decision.confidence}%)`
+                    });
+                    series.setMarkers(chartMarkers);
+                }
+
             } else if (decision.action === "SELL") {
                 card.classList.add("state-sell");
                 actionEl.innerText = `🐻 VENTA CONFIRMADA (${decision.confidence}%)`;
                 reasonEl.innerText = `Distribución VSA + Barrido de MÁXIMOS SMC.`;
+
+                // Añadir flecha de VENTA en la vela actual si no existe ya una señal en este timestamp
+                if (!chartMarkers.some(m => m.time === lastCandle.time)) {
+                    chartMarkers.push({
+                        time: lastCandle.time,
+                        position: 'aboveBar',
+                        color: '#ff5252',
+                        shape: 'arrowDown',
+                        text: `SELL (${decision.confidence}%)`
+                    });
+                    series.setMarkers(chartMarkers);
+                }
+
             } else if (decision.action === "NO_TRADE") {
                 actionEl.innerText = `⛔ NO OPERAR`;
                 reasonEl.innerText = decision.reason;
@@ -330,7 +358,6 @@
             document.getElementById("val-smc").innerText = decision.smc.text;
             document.getElementById("val-vsa").innerText = decision.vsa.text;
 
-            // Actualizar la fila según la temporalidad activa en el selector
             const activeRow = document.getElementById(`row-${currentTF}`);
             if (activeRow) {
                 activeRow.cells[1].innerText = decision.vsa.score > 0 ? "BUY" : "SELL";
