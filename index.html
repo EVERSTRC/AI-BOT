@@ -1,307 +1,422 @@
-<script>
-// ============================================================================
-// MOTOR DE INTELIGENCIA ARTIFICIAL PONDERADO
-// ============================================================================
-class UnifiedTradingAI {
-    constructor() {
-        this.weights = { smc: 0.40, vsa: 0.35, mtf: 0.25 };
-        this.threshold = 65; // Umbral mínimo del 65% para validar trade
-    }
-
-    evaluateSMC(candles, index) {
-        if (index < 20) return { score: 0, text: "Sin datos" };
-        const current = candles[index];
-        const lookback = candles.slice(index - 20, index);
+<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Bitcoin Trading Terminal - AI Institutional Decision System</title>
+    <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { background-color: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; height: 100vh; display: flex; flex-direction: column; overflow: hidden; }
         
-        const maxHigh = Math.max(...lookback.map(c => c.high));
-        const minLow = Math.min(...lookback.map(c => c.low));
+        #top-bar { height: 44px; background-color: #161b22; border-bottom: 1px solid #30363d; display: flex; align-items: center; justify-content: space-between; padding: 0 16px; flex-shrink: 0; }
+        .controls-left { display: flex; align-items: center; gap: 10px; }
+        .controls-right { display: flex; align-items: center; gap: 8px; }
+        select { background: #21262d; color: #fff; border: 1px solid #30363d; padding: 4px 8px; border-radius: 4px; outline: none; font-size: 11px; }
 
-        if (current.low < minLow && current.close > minLow) {
-            return { score: 90, text: "SSL SWEEP (Compra)" };
+        .status-badge { background-color: rgba(0, 230, 118, 0.15); color: #00e676; border: 1px solid #00e676; padding: 2px 8px; border-radius: 4px; font-size: 11px; font-weight: bold; }
+        
+        #main-container { display: flex; flex: 1; position: relative; overflow: hidden; }
+        #chart-wrapper { flex: 1; height: 100%; position: relative; }
+        #chart { width: 100%; height: 100%; }
+
+        /* BANNER DECISIONAL IA */
+        #ai-decision-card {
+            position: absolute; top: 12px; left: 16px; z-index: 10;
+            background: rgba(22, 27, 34, 0.92); border: 2px solid #2962ff;
+            border-radius: 6px; padding: 10px 14px; min-width: 320px;
+            backdrop-filter: blur(8px); box-shadow: 0 4px 12px rgba(0,0,0,0.5);
         }
-        if (current.high > maxHigh && current.close < maxHigh) {
-            return { score: -90, text: "BSL SWEEP (Venta)" };
+        .ai-title { font-size: 10px; text-transform: uppercase; color: #8b949e; font-weight: 700; letter-spacing: 0.5px; }
+        .ai-action { font-size: 15px; font-weight: 800; margin: 4px 0; color: #ffb300; }
+        .ai-reason { font-size: 11px; color: #c9d1d9; }
+        .ai-targets { display: flex; gap: 12px; margin-top: 6px; font-size: 10px; font-weight: bold; }
+
+        /* DASHBOARD DERECHO */
+        #dashboard { width: 240px; background-color: #161b22; border-left: 1px solid #30363d; padding: 8px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex-shrink: 0; }
+        .dash-module { background-color: #0d1117; border-radius: 4px; padding: 8px; border: 1px solid #21262d; display: flex; flex-direction: column; gap: 4px; }
+        .dash-module h4 { font-size: 10px; color: #8b949e; text-transform: uppercase; margin-bottom: 2px; }
+        .dash-row { display: flex; justify-content: space-between; font-size: 10px; align-items: center; }
+        .dash-val { font-weight: bold; }
+
+        .vsa-table { width: 100%; border-collapse: collapse; font-size: 9px; }
+        .vsa-table th { text-align: left; color: #8b949e; padding: 2px 0; border-bottom: 1px solid #21262d; }
+        .vsa-table td { padding: 2px 0; text-align: right; }
+        .vsa-table td:first-child { text-align: left; font-weight: bold; }
+
+        .state-buy { color: #00e676 !important; border-color: #00e676 !important; }
+        .state-sell { color: #ff5252 !important; border-color: #ff5252 !important; }
+        .state-wait { color: #ffb300 !important; border-color: #ffb300 !important; }
+    </style>
+</head>
+<body>
+
+    <div id="top-bar">
+        <div class="controls-left">
+            <span style="font-size:11px; color:#8b949e;">Timeframe:</span>
+            <select id="timeframe">
+                <option value="1m">1 Minuto</option>
+                <option value="5m">5 Minutos</option>
+                <option value="15m" selected>15 Minutos</option>
+                <option value="1h">1 Hora</option>
+                <option value="4h">4 Horas</option>
+            </select>
+            <div id="status" class="status-badge">Conectando...</div>
+        </div>
+        <div class="controls-right">
+            <span style="font-size:11px; color:#8b949e;">SMC + VSA AI System</span>
+        </div>
+    </div>
+
+    <div id="main-container">
+        <div id="chart-wrapper">
+            <!-- BANNER FLOTANTE IA -->
+            <div id="ai-decision-card">
+                <div class="ai-title">DECISIÓN DE LA IA (CONFLUENCIA TRIPLE)</div>
+                <div id="ai-action" class="ai-action">CALCULANDO PONDERACIÓN...</div>
+                <div id="ai-reason" class="ai-reason">Analizando liquidez SMC, delta VSA y Supertrend MTF...</div>
+                <div class="ai-targets">
+                    <span>TP Sugerido: <span id="ai-tp" style="color:#00e676;">--</span></span>
+                    <span>SL Invalidez: <span id="ai-sl" style="color:#ff5252;">--</span></span>
+                </div>
+            </div>
+            <div id="chart"></div>
+        </div>
+
+        <!-- DASHBOARD LATERAL -->
+        <div id="dashboard">
+            <div class="dash-module">
+                <h4>Noticias USD / Macro</h4>
+                <div id="news-container" style="font-size: 9px; color: #8b949e;">Cargando calendario...</div>
+            </div>
+
+            <div class="dash-module">
+                <h4>VSA MTF Ballenas</h4>
+                <table class="vsa-table">
+                    <thead>
+                        <tr><th>TF</th><th>Estado</th><th>Buy%</th><th>Sell%</th></tr>
+                    </thead>
+                    <tbody>
+                        <tr id="row-1m"><td>1M</td><td>--</td><td>--</td><td>--</td></tr>
+                        <tr id="row-5m"><td>5M</td><td>--</td><td>--</td><td>--</td></tr>
+                        <tr id="row-15m"><td>15M</td><td>--</td><td>--</td><td>--</td></tr>
+                        <tr id="row-1h"><td>1H</td><td>--</td><td>--</td><td>--</td></tr>
+                        <tr id="row-4h"><td>4H</td><td>--</td><td>--</td><td>--</td></tr>
+                    </tbody>
+                </table>
+            </div>
+
+            <div class="dash-module">
+                <h4>Métricas del Motor IA</h4>
+                <div class="dash-row"><span>Puntuación Compuesta:</span><span id="score-comp" class="dash-val">0%</span></div>
+                <div class="dash-row"><span>SMC Sweep:</span><span id="val-smc" class="dash-val">--</span></div>
+                <div class="dash-row"><span>VSA Absorción:</span><span id="val-vsa" class="dash-val">--</span></div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    // ============================================================================
+    // MOTOR DE INTELIGENCIA ARTIFICIAL PONDERADO
+    // ============================================================================
+    class UnifiedTradingAI {
+        constructor() {
+            this.weights = { smc: 0.40, vsa: 0.35, mtf: 0.25 };
+            this.threshold = 65; // Umbral mínimo del 65% para validar trade
         }
-        return { score: 0, text: "Zona Neutra" };
-    }
 
-    evaluateVSA(candles, index) {
-        if (index < 21) return { score: 0, text: "Esperando..." };
-        const current = candles[index];
-        const lookback = candles.slice(index - 21, index);
-        
-        const avgVol = lookback.reduce((acc, c) => acc + c.volume, 0) / lookback.length;
-        const isWhale = current.volume > (avgVol * 1.8);
-        
-        const range = current.high - current.low;
-        if (range === 0) return { score: 0, text: "Rango Nulo" };
+        evaluateSMC(candles, index) {
+            if (index < 20) return { score: 0, text: "Sin datos" };
+            const current = candles[index];
+            const lookback = candles.slice(index - 20, index);
+            
+            const maxHigh = Math.max(...lookback.map(c => c.high));
+            const minLow = Math.min(...lookback.map(c => c.low));
 
-        const buyVol = current.volume * ((current.close - current.low) / range);
-        const sellVol = current.volume - buyVol;
-        const deltaPct = ((buyVol - sellVol) / current.volume) * 100;
-
-        let score = deltaPct;
-        if (isWhale) score *= 1.2;
-
-        return { 
-            score: Math.max(-100, Math.min(100, score)), 
-            text: isWhale ? "VOLUMEN BALLENA" : "Volumen Normal",
-            buyPct: ((buyVol / current.volume) * 100).toFixed(1),
-            sellPct: ((sellVol / current.volume) * 100).toFixed(1)
-        };
-    }
-
-    analyzeAtIndex(candles, index, isMacroNews, currentTF) {
-        if (isMacroNews) {
-            return { action: "NO_TRADE", confidence: 0, score: 0, reason: "⚠️ NOTICIA USD DE ALTO IMPACTO EN BREVE" };
-        }
-
-        const smc = this.evaluateSMC(candles, index);
-        const vsa = this.evaluateVSA(candles, index);
-        
-        const mtfScore = (vsa.score > 0 && smc.score >= 0) ? 80 : (vsa.score < 0 && smc.score <= 0) ? -80 : 0;
-
-        const compositeScore = (smc.score * this.weights.smc) + (vsa.score * this.weights.vsa) + (mtfScore * this.weights.mtf);
-        const confidence = Math.abs(compositeScore).toFixed(1);
-
-        let action = "HOLD";
-        if (compositeScore >= this.threshold) action = "BUY";
-        else if (compositeScore <= -this.threshold) action = "SELL";
-
-        const currentPrice = candles[index].close;
-        const multiplier = currentTF === "1m" ? 0.002 : 0.005;
-        const buffer = currentPrice * multiplier;
-
-        return {
-            action,
-            confidence,
-            score: compositeScore.toFixed(1),
-            tp: action === "BUY" ? (currentPrice + buffer * 2).toFixed(2) : (currentPrice - buffer * 2).toFixed(2),
-            sl: action === "BUY" ? (currentPrice - buffer).toFixed(2) : (currentPrice + buffer).toFixed(2),
-            smc,
-            vsa
-        };
-    }
-}
-
-// ============================================================================
-// INTEGRACIÓN CON INTERFAZ GRÁFICA Y WEBSOCKET
-// ============================================================================
-document.addEventListener("DOMContentLoaded", function () {
-    const aiEngine = new UnifiedTradingAI();
-    let currentCandleData = [];
-    let chartMarkers = [];
-    let ws = null;
-    let isMacroNewsActive = false;
-
-    const chartContainer = document.getElementById("chart");
-    const statusEl = document.getElementById("status");
-    const tfSelect = document.getElementById("timeframe");
-
-    const chart = LightweightCharts.createChart(chartContainer, {
-        width: chartContainer.clientWidth,
-        height: chartContainer.clientHeight,
-        layout: { background: { type: 'solid', color: '#0d1117' }, textColor: '#c9d1d9' },
-        grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
-        timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: true }
-    });
-
-    const series = chart.addCandlestickSeries({
-        upColor: '#26a69a', downColor: '#ef5350',
-        borderUpColor: '#26a69a', borderDownColor: '#ef5350',
-        wickUpColor: '#26a69a', wickDownColor: '#ef5350'
-    });
-
-    const resizeObserver = new ResizeObserver(entries => {
-        if (!entries || entries.length === 0) return;
-        const { width, height } = entries[0].contentRect;
-        chart.applyOptions({ width, height });
-    });
-    resizeObserver.observe(chartContainer);
-
-    // MÉTODOS PARA RECALCULAR EL HISTORIAL COMPLETO
-    function buildHistoricalMarkers() {
-        chartMarkers = [];
-        const currentTF = tfSelect.value;
-
-        for (let i = 21; i < currentCandleData.length; i++) {
-            const decision = aiEngine.analyzeAtIndex(currentCandleData, i, isMacroNewsActive, currentTF);
-            const candle = currentCandleData[i];
-
-            if (decision.action === "BUY") {
-                chartMarkers.push({
-                    time: candle.time,
-                    position: 'belowBar',
-                    color: '#00e676',
-                    shape: 'arrowUp',
-                    text: `BUY (${decision.confidence}%)`
-                });
-            } else if (decision.action === "SELL") {
-                chartMarkers.push({
-                    time: candle.time,
-                    position: 'aboveBar',
-                    color: '#ff5252',
-                    shape: 'arrowDown',
-                    text: `SELL (${decision.confidence}%)`
-                });
+            if (current.low < minLow && current.close > minLow) {
+                return { score: 90, text: "SSL SWEEP (Compra)" };
             }
+            if (current.high > maxHigh && current.close < maxHigh) {
+                return { score: -90, text: "BSL SWEEP (Venta)" };
+            }
+            return { score: 0, text: "Zona Neutra" };
         }
-        series.setMarkers(chartMarkers);
-    }
 
-    async function fetchKlines(interval) {
-        statusEl.innerText = "Cargando...";
-        statusEl.style.color = "#ffb300";
-
-        if (ws) ws.close();
-        chartMarkers = [];
-        series.setMarkers([]);
-
-        try {
-            const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=500`);
-            const data = await res.json();
+        evaluateVSA(candles, index) {
+            if (index < 21) return { score: 0, text: "Esperando..." };
+            const current = candles[index];
+            const lookback = candles.slice(index - 21, index);
             
-            currentCandleData = data.map(d => ({
-                time: Math.floor(d[0] / 1000),
-                open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5])
-            }));
-
-            series.setData(currentCandleData);
+            const avgVol = lookback.reduce((acc, c) => acc + c.volume, 0) / lookback.length;
+            const isWhale = current.volume > (avgVol * 1.8);
             
-            // Generar marcas en el gráfico para todo el historial cargado
-            buildHistoricalMarkers();
-            
-            connectWebSocket(interval);
-            runAIAnalysis();
-        } catch (err) {
-            statusEl.innerText = "Error API";
-            statusEl.style.color = "#ff1744";
-        }
-    }
+            const range = current.high - current.low;
+            if (range === 0) return { score: 0, text: "Rango Nulo" };
 
-    function connectWebSocket(interval) {
-        ws = new WebSocket(`wss://stream.binance.com:9443/ws/btcusdt@kline_${interval}`);
+            const buyVol = current.volume * ((current.close - current.low) / range);
+            const sellVol = current.volume - buyVol;
+            const deltaPct = ((buyVol - sellVol) / current.volume) * 100;
 
-        ws.onopen = () => {
-            statusEl.innerText = "Conectado ✓";
-            statusEl.style.color = "#00e676";
-        };
+            let score = deltaPct;
+            if (isWhale) score *= 1.2;
 
-        ws.onmessage = (event) => {
-            const msg = JSON.parse(event.data);
-            const k = msg.k;
-
-            const candle = {
-                time: Math.floor(k.t / 1000),
-                open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c), volume: parseFloat(k.v)
+            return { 
+                score: Math.max(-100, Math.min(100, score)), 
+                text: isWhale ? "VOLUMEN BALLENA" : "Volumen Normal",
+                buyPct: ((buyVol / current.volume) * 100).toFixed(1),
+                sellPct: ((sellVol / current.volume) * 100).toFixed(1)
             };
-
-            series.update(candle);
-
-            const lastIdx = currentCandleData.length - 1;
-            if (lastIdx >= 0 && currentCandleData[lastIdx].time === candle.time) {
-                currentCandleData[lastIdx] = candle;
-            } else {
-                currentCandleData.push(candle);
-            }
-
-            runAIAnalysis();
-        };
-    }
-
-    function runAIAnalysis() {
-        if (currentCandleData.length < 20) return;
-
-        const currentTF = tfSelect.value;
-        const lastIndex = currentCandleData.length - 1;
-        const decision = aiEngine.analyzeAtIndex(currentCandleData, lastIndex, isMacroNewsActive, currentTF);
-
-        const card = document.getElementById("ai-decision-card");
-        const actionEl = document.getElementById("ai-action");
-        const reasonEl = document.getElementById("ai-reason");
-        const tpEl = document.getElementById("ai-tp");
-        const slEl = document.getElementById("ai-sl");
-
-        card.className = "";
-        const lastCandle = currentCandleData[lastIndex];
-
-        if (decision.action === "BUY") {
-            card.classList.add("state-buy");
-            actionEl.innerText = `🚀 COMPRA CONFIRMADA (${decision.confidence}%)`;
-            reasonEl.innerText = `Barrido de Liquidez SMC + Absorción Compradora VSA.`;
-
-            if (!chartMarkers.some(m => m.time === lastCandle.time)) {
-                chartMarkers.push({
-                    time: lastCandle.time,
-                    position: 'belowBar',
-                    color: '#00e676',
-                    shape: 'arrowUp',
-                    text: `BUY (${decision.confidence}%)`
-                });
-                series.setMarkers(chartMarkers);
-            }
-
-        } else if (decision.action === "SELL") {
-            card.classList.add("state-sell");
-            actionEl.innerText = `🐻 VENTA CONFIRMADA (${decision.confidence}%)`;
-            reasonEl.innerText = `Distribución VSA + Barrido de MÁXIMOS SMC.`;
-
-            if (!chartMarkers.some(m => m.time === lastCandle.time)) {
-                chartMarkers.push({
-                    time: lastCandle.time,
-                    position: 'aboveBar',
-                    color: '#ff5252',
-                    shape: 'arrowDown',
-                    text: `SELL (${decision.confidence}%)`
-                });
-                series.setMarkers(chartMarkers);
-            }
-
-        } else if (decision.action === "NO_TRADE") {
-            actionEl.innerText = `⛔ NO OPERAR`;
-            reasonEl.innerText = decision.reason;
-        } else {
-            card.classList.add("state-wait");
-            actionEl.innerText = `⏳ ESPERANDO CONFLUENCIA (${decision.confidence}%)`;
-            reasonEl.innerText = "Estructura en rango lateral. Aguardando acumulación/distribución.";
         }
 
-        tpEl.innerText = `$${decision.tp}`;
-        slEl.innerText = `$${decision.sl}`;
+        analyzeAtIndex(candles, index, isMacroNews, currentTF) {
+            if (isMacroNews) {
+                return { action: "NO_TRADE", confidence: 0, score: 0, reason: "⚠️ NOTICIA USD DE ALTO IMPACTO EN BREVE" };
+            }
 
-        document.getElementById("score-comp").innerText = `${decision.score}%`;
-        document.getElementById("val-smc").innerText = decision.smc.text;
-        document.getElementById("val-vsa").innerText = decision.vsa.text;
+            const smc = this.evaluateSMC(candles, index);
+            const vsa = this.evaluateVSA(candles, index);
+            
+            const mtfScore = (vsa.score > 0 && smc.score >= 0) ? 80 : (vsa.score < 0 && smc.score <= 0) ? -80 : 0;
 
-        const activeRow = document.getElementById(`row-${currentTF}`);
-        if (activeRow) {
-            activeRow.cells[1].innerText = decision.vsa.score > 0 ? "BUY" : "SELL";
-            activeRow.cells[2].innerText = `${decision.vsa.buyPct}%`;
-            activeRow.cells[3].innerText = `${decision.vsa.sellPct}%`;
+            const compositeScore = (smc.score * this.weights.smc) + (vsa.score * this.weights.vsa) + (mtfScore * this.weights.mtf);
+            const confidence = Math.abs(compositeScore).toFixed(1);
+
+            let action = "HOLD";
+            if (compositeScore >= this.threshold) action = "BUY";
+            else if (compositeScore <= -this.threshold) action = "SELL";
+
+            const currentPrice = candles[index].close;
+            const multiplier = currentTF === "1m" ? 0.002 : 0.005;
+            const buffer = currentPrice * multiplier;
+
+            return {
+                action,
+                confidence,
+                score: compositeScore.toFixed(1),
+                tp: action === "BUY" ? (currentPrice + buffer * 2).toFixed(2) : (currentPrice - buffer * 2).toFixed(2),
+                sl: action === "BUY" ? (currentPrice - buffer).toFixed(2) : (currentPrice + buffer).toFixed(2),
+                smc,
+                vsa
+            };
         }
     }
 
-    async function updateNews() {
-        const newsEl = document.getElementById("news-container");
-        try {
-            const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent("https://www.mql5.com/es/rss/calendar")}`);
-            const data = await res.json();
-            if (data.items && data.items.length > 0) {
-                const usdItem = data.items.find(i => i.title.includes("USD") || i.description.includes("USD"));
-                if (usdItem) {
-                    newsEl.innerText = `Próximo: ${usdItem.title.substring(0, 30)}...`;
-                    return;
+    // ============================================================================
+    // INTEGRACIÓN CON INTERFAZ GRÁFICA Y WEBSOCKET
+    // ============================================================================
+    document.addEventListener("DOMContentLoaded", function () {
+        const aiEngine = new UnifiedTradingAI();
+        let currentCandleData = [];
+        let chartMarkers = [];
+        let ws = null;
+        let isMacroNewsActive = false;
+
+        const chartContainer = document.getElementById("chart");
+        const statusEl = document.getElementById("status");
+        const tfSelect = document.getElementById("timeframe");
+
+        const chart = LightweightCharts.createChart(chartContainer, {
+            width: chartContainer.clientWidth,
+            height: chartContainer.clientHeight,
+            layout: { background: { type: 'solid', color: '#0d1117' }, textColor: '#c9d1d9' },
+            grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
+            timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: true }
+        });
+
+        const series = chart.addCandlestickSeries({
+            upColor: '#26a69a', downColor: '#ef5350',
+            borderUpColor: '#26a69a', borderDownColor: '#ef5350',
+            wickUpColor: '#26a69a', wickDownColor: '#ef5350'
+        });
+
+        const resizeObserver = new ResizeObserver(entries => {
+            if (!entries || entries.length === 0) return;
+            const { width, height } = entries[0].contentRect;
+            chart.applyOptions({ width, height });
+        });
+        resizeObserver.observe(chartContainer);
+
+        function buildHistoricalMarkers() {
+            chartMarkers = [];
+            const currentTF = tfSelect.value;
+
+            for (let i = 21; i < currentCandleData.length; i++) {
+                const decision = aiEngine.analyzeAtIndex(currentCandleData, i, isMacroNewsActive, currentTF);
+                const candle = currentCandleData[i];
+
+                if (decision.action === "BUY") {
+                    chartMarkers.push({
+                        time: candle.time,
+                        position: 'belowBar',
+                        color: '#00e676',
+                        shape: 'arrowUp',
+                        text: `BUY (${decision.confidence}%)`
+                    });
+                } else if (decision.action === "SELL") {
+                    chartMarkers.push({
+                        time: candle.time,
+                        position: 'aboveBar',
+                        color: '#ff5252',
+                        shape: 'arrowDown',
+                        text: `SELL (${decision.confidence}%)`
+                    });
                 }
             }
-            newsEl.innerText = "Sin eventos USD clave hoy";
-        } catch(e) {
-            newsEl.innerText = "Feed noticias MQL5 activo";
+            series.setMarkers(chartMarkers);
         }
-    }
 
-    tfSelect.addEventListener("change", (e) => fetchKlines(e.target.value));
+        async function fetchKlines(interval) {
+            statusEl.innerText = "Cargando...";
+            statusEl.style.color = "#ffb300";
 
-    fetchKlines("15m");
-    updateNews();
-});
-</script>
+            if (ws) ws.close();
+            chartMarkers = [];
+            series.setMarkers([]);
+
+            try {
+                const res = await fetch(`https://api.binance.com/api/v3/klines?symbol=BTCUSDT&interval=${interval}&limit=500`);
+                const data = await res.json();
+                
+                currentCandleData = data.map(d => ({
+                    time: Math.floor(d[0] / 1000),
+                    open: parseFloat(d[1]), high: parseFloat(d[2]), low: parseFloat(d[3]), close: parseFloat(d[4]), volume: parseFloat(d[5])
+                }));
+
+                series.setData(currentCandleData);
+                buildHistoricalMarkers();
+                connectWebSocket(interval);
+                runAIAnalysis();
+            } catch (err) {
+                statusEl.innerText = "Error API";
+                statusEl.style.color = "#ff1744";
+            }
+        }
+
+        function connectWebSocket(interval) {
+            ws = new WebSocket(`wss://stream.binance.com:9443/ws/btcusdt@kline_${interval}`);
+
+            ws.onopen = () => {
+                statusEl.innerText = "Conectado ✓";
+                statusEl.style.color = "#00e676";
+            };
+
+            ws.onmessage = (event) => {
+                const msg = JSON.parse(event.data);
+                const k = msg.k;
+
+                const candle = {
+                    time: Math.floor(k.t / 1000),
+                    open: parseFloat(k.o), high: parseFloat(k.h), low: parseFloat(k.l), close: parseFloat(k.c), volume: parseFloat(k.v)
+                };
+
+                series.update(candle);
+
+                const lastIdx = currentCandleData.length - 1;
+                if (lastIdx >= 0 && currentCandleData[lastIdx].time === candle.time) {
+                    currentCandleData[lastIdx] = candle;
+                } else {
+                    currentCandleData.push(candle);
+                }
+
+                runAIAnalysis();
+            };
+        }
+
+        function runAIAnalysis() {
+            if (currentCandleData.length < 20) return;
+
+            const currentTF = tfSelect.value;
+            const lastIndex = currentCandleData.length - 1;
+            const decision = aiEngine.analyzeAtIndex(currentCandleData, lastIndex, isMacroNewsActive, currentTF);
+
+            const card = document.getElementById("ai-decision-card");
+            const actionEl = document.getElementById("ai-action");
+            const reasonEl = document.getElementById("ai-reason");
+            const tpEl = document.getElementById("ai-tp");
+            const slEl = document.getElementById("ai-sl");
+
+            card.className = "";
+            const lastCandle = currentCandleData[lastIndex];
+
+            if (decision.action === "BUY") {
+                card.classList.add("state-buy");
+                actionEl.innerText = `🚀 COMPRA CONFIRMADA (${decision.confidence}%)`;
+                reasonEl.innerText = `Barrido de Liquidez SMC + Absorción Compradora VSA.`;
+
+                if (!chartMarkers.some(m => m.time === lastCandle.time)) {
+                    chartMarkers.push({
+                        time: lastCandle.time,
+                        position: 'belowBar',
+                        color: '#00e676',
+                        shape: 'arrowUp',
+                        text: `BUY (${decision.confidence}%)`
+                    });
+                    series.setMarkers(chartMarkers);
+                }
+
+            } else if (decision.action === "SELL") {
+                card.classList.add("state-sell");
+                actionEl.innerText = `🐻 VENTA CONFIRMADA (${decision.confidence}%)`;
+                reasonEl.innerText = `Distribución VSA + Barrido de MÁXIMOS SMC.`;
+
+                if (!chartMarkers.some(m => m.time === lastCandle.time)) {
+                    chartMarkers.push({
+                        time: lastCandle.time,
+                        position: 'aboveBar',
+                        color: '#ff5252',
+                        shape: 'arrowDown',
+                        text: `SELL (${decision.confidence}%)`
+                    });
+                    series.setMarkers(chartMarkers);
+                }
+
+            } else if (decision.action === "NO_TRADE") {
+                actionEl.innerText = `⛔ NO OPERAR`;
+                reasonEl.innerText = decision.reason;
+            } else {
+                card.classList.add("state-wait");
+                actionEl.innerText = `⏳ ESPERANDO CONFLUENCIA (${decision.confidence}%)`;
+                reasonEl.innerText = "Estructura en rango lateral. Aguardando acumulación/distribución.";
+            }
+
+            tpEl.innerText = `$${decision.tp}`;
+            slEl.innerText = `$${decision.sl}`;
+
+            document.getElementById("score-comp").innerText = `${decision.score}%`;
+            document.getElementById("val-smc").innerText = decision.smc.text;
+            document.getElementById("val-vsa").innerText = decision.vsa.text;
+
+            const activeRow = document.getElementById(`row-${currentTF}`);
+            if (activeRow) {
+                activeRow.cells[1].innerText = decision.vsa.score > 0 ? "BUY" : "SELL";
+                activeRow.cells[2].innerText = `${decision.vsa.buyPct}%`;
+                activeRow.cells[3].innerText = `${decision.vsa.sellPct}%`;
+            }
+        }
+
+        async function updateNews() {
+            const newsEl = document.getElementById("news-container");
+            try {
+                const res = await fetch(`https://api.rss2json.com/v1/api.json?rss_url=${encodeURIComponent("https://www.mql5.com/es/rss/calendar")}`);
+                const data = await res.json();
+                if (data.items && data.items.length > 0) {
+                    const usdItem = data.items.find(i => i.title.includes("USD") || i.description.includes("USD"));
+                    if (usdItem) {
+                        newsEl.innerText = `Próximo: ${usdItem.title.substring(0, 30)}...`;
+                        return;
+                    }
+                }
+                newsEl.innerText = "Sin eventos USD clave hoy";
+            } catch(e) {
+                newsEl.innerText = "Feed noticias MQL5 activo";
+            }
+        }
+
+        tfSelect.addEventListener("change", (e) => fetchKlines(e.target.value));
+
+        fetchKlines("15m");
+        updateNews();
+    });
+    </script>
+</body>
+</html>
