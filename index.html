@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Bitcoin Trading Terminal - AI Institutional Decision System</title>
+    <title>Bitcoin Trading Terminal - AI Institutional Decision System (1M Enabled)</title>
     <script src="https://unpkg.com/lightweight-charts@4.1.1/dist/lightweight-charts.standalone.production.js"></script>
     <style>
         * { box-sizing: border-box; margin: 0; padding: 0; }
@@ -55,6 +55,7 @@
         <div class="controls-left">
             <span style="font-size:11px; color:#8b949e;">Timeframe:</span>
             <select id="timeframe">
+                <option value="1m">1 Minuto</option>
                 <option value="5m">5 Minutos</option>
                 <option value="15m" selected>15 Minutos</option>
                 <option value="1h">1 Hora</option>
@@ -96,6 +97,7 @@
                         <tr><th>TF</th><th>Estado</th><th>Buy%</th><th>Sell%</th></tr>
                     </thead>
                     <tbody>
+                        <tr id="row-1m"><td>1M</td><td>--</td><td>--</td><td>--</td></tr>
                         <tr id="row-5m"><td>5M</td><td>--</td><td>--</td><td>--</td></tr>
                         <tr id="row-15m"><td>15M</td><td>--</td><td>--</td><td>--</td></tr>
                         <tr id="row-1h"><td>1H</td><td>--</td><td>--</td><td>--</td></tr>
@@ -115,7 +117,7 @@
 
     <script>
     // ============================================================================
-    // MOTOR DE INTELIGENCIA ARTIFICIAL PONDERADO
+    // MOTOR DE INTELIGENCIA ARTIFICIAL PONDERADO (OPTIMIZADO PARA 1M/SCALPING)
     // ============================================================================
     class UnifiedTradingAI {
         constructor() {
@@ -166,7 +168,7 @@
             };
         }
 
-        analyze(candles, isMacroNews) {
+        analyze(candles, isMacroNews, currentTF) {
             if (isMacroNews) {
                 return { action: "NO_TRADE", confidence: 0, score: 0, reason: "⚠️ NOTICIA USD DE ALTO IMPACTO EN BREVE" };
             }
@@ -185,7 +187,10 @@
             else if (compositeScore <= -this.threshold) action = "SELL";
 
             const currentPrice = candles[candles.length - 1].close;
-            const buffer = currentPrice * 0.005;
+            
+            // Ajuste dinámico de Stop Loss según la temporalidad (Scalping en 1m)
+            const multiplier = currentTF === "1m" ? 0.002 : 0.005;
+            const buffer = currentPrice * multiplier;
 
             return {
                 action,
@@ -217,7 +222,7 @@
             height: chartContainer.clientHeight,
             layout: { background: { type: 'solid', color: '#0d1117' }, textColor: '#c9d1d9' },
             grid: { vertLines: { color: '#21262d' }, horzLines: { color: '#21262d' } },
-            timeScale: { borderColor: '#30363d', timeVisible: true }
+            timeScale: { borderColor: '#30363d', timeVisible: true, secondsVisible: true }
         });
 
         const series = chart.addCandlestickSeries({
@@ -290,7 +295,8 @@
         function runAIAnalysis() {
             if (currentCandleData.length < 20) return;
 
-            const decision = aiEngine.analyze(currentCandleData, isMacroNewsActive);
+            const currentTF = tfSelect.value;
+            const decision = aiEngine.analyze(currentCandleData, isMacroNewsActive, currentTF);
 
             const card = document.getElementById("ai-decision-card");
             const actionEl = document.getElementById("ai-action");
@@ -324,11 +330,12 @@
             document.getElementById("val-smc").innerText = decision.smc.text;
             document.getElementById("val-vsa").innerText = decision.vsa.text;
 
-            const row15m = document.getElementById("row-15m");
-            if (row15m) {
-                row15m.cells[1].innerText = decision.vsa.score > 0 ? "BUY" : "SELL";
-                row15m.cells[2].innerText = `${decision.vsa.buyPct}%`;
-                row15m.cells[3].innerText = `${decision.vsa.sellPct}%`;
+            // Actualizar la fila según la temporalidad activa en el selector
+            const activeRow = document.getElementById(`row-${currentTF}`);
+            if (activeRow) {
+                activeRow.cells[1].innerText = decision.vsa.score > 0 ? "BUY" : "SELL";
+                activeRow.cells[2].innerText = `${decision.vsa.buyPct}%`;
+                activeRow.cells[3].innerText = `${decision.vsa.sellPct}%`;
             }
         }
 
